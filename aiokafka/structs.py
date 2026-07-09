@@ -17,7 +17,6 @@ __all__ = [
 
 
 class TopicPartition(NamedTuple):
-    """A topic and partition tuple"""
 
     topic: str
     "A topic name"
@@ -27,9 +26,7 @@ class TopicPartition(NamedTuple):
 
 
 class BrokerMetadata(NamedTuple):
-    """A Kafka broker metadata used by admin tools"""
 
-    # FIXME: consider updating implementation (https://github.com/aio-libs/aiokafka/issues/1050)
     nodeId: int | str
     "The Kafka broker id"
 
@@ -47,7 +44,6 @@ class BrokerMetadata(NamedTuple):
 
 
 class PartitionMetadata(NamedTuple):
-    """A topic partition metadata describing the state in the MetadataResponse"""
 
     topic: str
     "The topic name of the partition this metadata relates to"
@@ -68,13 +64,6 @@ class PartitionMetadata(NamedTuple):
 
 
 class OffsetAndMetadata(NamedTuple):
-    """The Kafka offset commit API
-
-    The Kafka offset commit API allows users to provide additional metadata
-    (in the form of a string) when an offset is committed. This can be useful
-    (for example) to store information about which node made the commit,
-    what time the commit was made, etc.
-    """
 
     offset: int
     "The offset to be committed"
@@ -82,11 +71,9 @@ class OffsetAndMetadata(NamedTuple):
     metadata: str
     "Non-null metadata"
 
-    # TODO add leaderEpoch:
 
 
 class RecordMetadata(NamedTuple):
-    """Returned when a :class:`~.AIOKafkaProducer` sends a message"""
 
     topic: str
     "The topic name"

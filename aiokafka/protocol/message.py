@@ -22,7 +22,6 @@ from .types import Bytes, Int8, Int32, Int64, Schema, UInt32
 
 
 class Message(Struct):
-    # FIXME: override __eq__/__repr__ methods from Struct
 
     BASE_FIELDS = (
         ("crc", UInt32),
@@ -96,7 +95,6 @@ class Message(Struct):
         assert key is None or isinstance(key, bytes), "key must be bytes"
         assert magic > 0 or timestamp is None, "timestamp not supported in v0"
 
-        # Default timestamp to now for v1 messages
         if magic > 0 and timestamp is None:
             timestamp = int(time.time() * 1000)
         self.timestamp = timestamp
@@ -109,17 +107,7 @@ class Message(Struct):
 
     @property
     def timestamp_type(self) -> Literal[0, 1] | None:
-        """0 for CreateTime; 1 for LogAppendTime; None if unsupported.
-
-        Value is determined by broker; produced messages should always set to 0
-        Requires Kafka >= 0.10 / message version >= 1
-        """
-        if self.magic == 0:
-            return None
-        elif self.attributes & self.TIMESTAMP_TYPE_MASK:
-            return 1
-        else:
-            return 0
+        pass
 
     def encode(self, recalc_crc: bool = True) -> bytes:
         version = self.magic
@@ -152,7 +140,6 @@ class Message(Struct):
         if isinstance(data, bytes):
             _validated_crc = crc32(data[4:])
             data = io.BytesIO(data)
-        # Partial decode required to determine message version
         crc, magic, attributes = (
             cls.BASE_FIELDS[0][1].decode(data),
             cls.BASE_FIELDS[1][1].decode(data),
@@ -192,14 +179,7 @@ class Message(Struct):
         msg._validated_crc = _validated_crc
         return msg
 
-    def validate_crc(self) -> bool:
-        if self._validated_crc is None:
-            raw_msg = self.encode(recalc_crc=False)
-            self._validated_crc = crc32(raw_msg[4:])
-        return self.crc == self._validated_crc
 
-    def is_compressed(self) -> bool:
-        return self.attributes & self.CODEC_MASK != 0
 
     def decompress(
         self,
@@ -245,11 +225,9 @@ class MessageSet:
         items: io.BytesIO | Iterable[tuple[int, bytes]],
         prepend_size: bool = True,
     ) -> bytes:
-        # RecordAccumulator encodes messagesets internally
         if isinstance(items, io.BytesIO):
             size = Int32.decode(items)
             if prepend_size:
-                # rewind and return all the bytes
                 items.seek(items.tell() - 4)
                 size += 4
             return items.read(size)
@@ -276,9 +254,6 @@ class MessageSet:
         if bytes_to_read is None:
             bytes_to_read = Int32.decode(data)
 
-        # if FetchRequest max_bytes is smaller than the available message set
-        # the server returns partial data for the final message
-        # So create an internal buffer to avoid over-reading
         raw = io.BytesIO(data.read(bytes_to_read))
 
         items: list[tuple[int, int, Message] | tuple[None, None, PartialMessage]] = []
@@ -292,23 +267,8 @@ class MessageSet:
                     (offset, len(msg_bytes), Message.decode(msg_bytes)),
                 )
         except ValueError:
-            # PartialMessage to signal that max_bytes may be too small
             items.append(
                 (None, None, PartialMessage()),
             )
         return items
 
-    @classmethod
-    def repr(
-        cls,
-        messages: io.BytesIO
-        | list[tuple[int, int, Message] | tuple[None, None, PartialMessage]],
-    ) -> str:
-        if isinstance(messages, io.BytesIO):
-            offset = messages.tell()
-            decoded = cls.decode(messages)
-            messages.seek(offset)
-            decoded_messages = decoded
-        else:
-            decoded_messages = messages
-        return str([cls.ITEM.repr(m) for m in decoded_messages])

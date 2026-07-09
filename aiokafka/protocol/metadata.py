@@ -185,8 +185,6 @@ class MetadataResponse_v5(Response):
 
 
 class MetadataRequest_v0(RequestStruct):
-    # topics:
-    #     None: Empty Array (len 0) for topics returns all topics
 
     API_KEY = 3
     API_VERSION = 0
@@ -195,9 +193,6 @@ class MetadataRequest_v0(RequestStruct):
 
 
 class MetadataRequest_v1(RequestStruct):
-    # topics:
-    #    -1: Null Array (len -1) for topics returns all topics
-    #    None: Empty array (len 0) for topics returns no topics
 
     API_KEY = 3
     API_VERSION = 1
@@ -206,9 +201,6 @@ class MetadataRequest_v1(RequestStruct):
 
 
 class MetadataRequest_v2(RequestStruct):
-    # topics:
-    #    -1: Null Array (len -1) for topics returns all topics
-    #    None: Empty array (len 0) for topics returns no topics
 
     API_KEY = 3
     API_VERSION = 2
@@ -217,9 +209,6 @@ class MetadataRequest_v2(RequestStruct):
 
 
 class MetadataRequest_v3(RequestStruct):
-    # topics:
-    #    -1: Null Array (len -1) for topics returns all topics
-    #    None: Empty array (len 0) for topics returns no topics
 
     API_KEY = 3
     API_VERSION = 3
@@ -228,9 +217,6 @@ class MetadataRequest_v3(RequestStruct):
 
 
 class MetadataRequest_v4(RequestStruct):
-    # topics:
-    #    -1: Null Array (len -1) for topics returns all topics
-    #    None: Empty array (len 0) for topics returns no topics
 
     API_KEY = 3
     API_VERSION = 4
@@ -241,14 +227,7 @@ class MetadataRequest_v4(RequestStruct):
 
 
 class MetadataRequest_v5(RequestStruct):
-    """
-    The v5 metadata request is the same as v4.
-    An additional field for offline_replicas has been added to the v5 metadata response
-    """
 
-    # topics:
-    #     -1: Null Array (len -1) for topics returns all topics
-    #     None: Empty array (len 0) for topics returns no topics
 
     API_KEY = 3
     API_VERSION = 5

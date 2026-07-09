@@ -95,14 +95,9 @@ class AIOKafkaProtocol(asyncio.StreamReaderProtocol):
         self._closed_fut = closed_fut
         super().__init__(*args, loop=loop, **kw)
 
-    def connection_lost(self, exc):
-        super().connection_lost(exc)
-        if not self._closed_fut.cancelled():
-            self._closed_fut.set_result(None)
 
 
 class AIOKafkaConnection:
-    """Class for manage connection to Kafka node"""
 
     _reader = None  # For __del__ to work properly, just in case
     _source_traceback = None
@@ -159,8 +154,6 @@ class AIOKafkaConnection:
         self._versions = {}
 
         self._reader = self._writer = self._protocol = None
-        # Even on small size seems to be a bit faster than list.
-        # ~2x on size of 2 in Python3.6
         self._requests = collections.deque()
         self._read_task = None
         self._correlation_id = 0
@@ -175,8 +168,6 @@ class AIOKafkaConnection:
         if loop.get_debug():
             self._source_traceback = traceback.extract_stack(sys._getframe(1))
 
-    # Warn and try to close. We can close synchronously, so will attempt
-    # that
     def __del__(self, _warnings=warnings):
         if self.connected():
             _warnings.warn(
@@ -187,8 +178,6 @@ class AIOKafkaConnection:
             if self._loop.is_closed():
                 return
 
-            # We don't need to call callback in this case. Just release
-            # sockets and stop connections.
             self._on_close_cb = None
             self.close()
 
@@ -209,7 +198,6 @@ class AIOKafkaConnection:
             assert self._security_protocol in ["SSL", "SASL_SSL"]
             assert self._ssl_context is not None
             ssl = self._ssl_context
-        # Create streams same as `open_connection`, but using custom protocol
         reader = asyncio.StreamReader(limit=READER_LIMIT, loop=loop)
         protocol = AIOKafkaProtocol(self._closed_fut, reader, loop=loop)
         async with async_timeout.timeout(self._request_timeout):
@@ -219,10 +207,8 @@ class AIOKafkaConnection:
         writer = asyncio.StreamWriter(transport, protocol, reader, loop)
         self._reader, self._writer, self._protocol = reader, writer, protocol
 
-        # Start reader task.
         self._read_task = self._create_reader_task()
 
-        # Start idle checker
         if self._max_idle_ms is not None:
             self._idle_handle = loop.call_soon(self._idle_check, weakref.ref(self))
 
@@ -296,10 +282,6 @@ class AIOKafkaConnection:
                 break
             payload, expect_response = res
 
-            # Before Kafka 1.0.0 Authentication bytes for SASL were send
-            # without a Kafka Header, only with Length. This made error
-            # handling hard, so they made SaslAuthenticateRequest to properly
-            # pass error messages to clients on source of error.
             if handshake_response is not None and handshake_response.API_VERSION > 0:
                 resp = await self.send(SaslAuthenticateRequest(payload))
                 error_type = Errors.for_code(resp.error_code)
@@ -348,62 +330,13 @@ class AIOKafkaConnection:
             sasl_oauth_token_provider=self._sasl_oauth_token_provider,
         )
 
-    @property
-    def sasl_principal(self):
-        service = self._sasl_kerberos_service_name
-        domain = self._sasl_kerberos_domain_name or self.host
 
-        return f"{service}@{domain}"
 
-    @classmethod
-    def _on_read_task_error(cls, self_ref, read_task):
-        # We don't want to react to cancelled errors
-        if read_task.cancelled():
-            return
-
-        try:
-            read_task.result()
-        except Exception as exc:
-            if not isinstance(exc, OSError | EOFError | ConnectionError):
-                log.exception("Unexpected exception in AIOKafkaConnection")
-
-            self = self_ref()
-            if self is not None:
-                self.close(reason=CloseReason.CONNECTION_BROKEN, exc=exc)
-
-    @staticmethod
-    def _idle_check(self_ref):
-        self = self_ref()
-        if self is None:
-            return
-
-        idle_for = time.monotonic() - self._last_action
-        timeout = self._max_idle_ms / 1000
-        # If we have any pending requests, we are assumed to be not idle.
-        # it's up to `request_timeout_ms` to break those.
-        if (idle_for >= timeout) and not self._requests:
-            self.close(CloseReason.IDLE_DROP)
-        else:
-            if self._requests:
-                # We must wait at least max_idle_ms anyway. Mostly this setting
-                # is quite high so we shouldn't spend many CPU on this
-                wake_up_in = timeout
-            else:
-                wake_up_in = timeout - idle_for
-            self._idle_handle = self._loop.call_later(
-                wake_up_in, self._idle_check, self_ref
-            )
 
     def __repr__(self):
         return f"<AIOKafkaConnection host={self.host} port={self.port}>"
 
-    @property
-    def host(self):
-        return self._host
 
-    @property
-    def port(self):
-        return self._port
 
     def send(self, request, expect_response=True):
         if self._writer is None:
@@ -493,8 +426,6 @@ class AIOKafkaConnection:
         if self._idle_handle is not None:
             self._idle_handle.cancel()
 
-        # transport.close() will close socket, but not right ahead.
-        # Return a future in case we need to wait on it.
         return self._closed_fut
 
     def _create_reader_task(self):
@@ -507,10 +438,6 @@ class AIOKafkaConnection:
 
     @staticmethod
     async def _read(self_ref):
-        # XXX: I know that it become a bit more ugly once cyclic references
-        # were removed, but it's needed to allow connections to properly
-        # release resources if leaked.
-        # NOTE: all errors will be handled by done callback
         self = self_ref()
         if self is None:
             return
@@ -573,11 +500,7 @@ class AIOKafkaConnection:
                 )
                 fut.set_result(response)
 
-        # Update idle timer.
         self._last_action = time.monotonic()
-        # We should clear the request future only after all code is done and
-        # future is resolved. If any fails it's up to close() method to fail
-        # this future.
         self._requests.popleft()
 
     def _next_correlation_id(self):
@@ -590,17 +513,7 @@ class BaseSaslAuthenticator:
         return self._loop.run_in_executor(None, self._step, payload)
 
     def _step(self, payload):
-        """Process next token in sequence and return with:
-        ``None`` if it was the last needed exchange
-        ``tuple`` tuple with new token and a boolean whether it requires an
-            answer token
-        """
-        try:
-            data = self._authenticator.send(payload)
-        except StopIteration:
-            return None
-        else:
-            return data
+        pass
 
 
 class SaslPlainAuthenticator(BaseSaslAuthenticator):
@@ -612,7 +525,6 @@ class SaslPlainAuthenticator(BaseSaslAuthenticator):
 
     def authenticator_plain(self):
         """Automaton to authenticate with SASL tokens"""
-        # Send PLAIN credentials per RFC-4616
         data = "\0".join(
             [
                 self._sasl_plain_username,
@@ -688,9 +600,6 @@ class ScramAuthenticator(BaseSaslAuthenticator):
         self._authenticator = self.authenticator_scram()
 
     def first_message(self):
-        # The characters ',' or '=' in usernames are sent as '=2C' and
-        # '=3D' respectively.
-        # https://datatracker.ietf.org/doc/html/rfc5802#section-5.1
         quoted_username = (
             self._sasl_plain_username.replace("=", "=3D").replace( ",", "=2C")
         )  # fmt: skip
@@ -778,9 +687,6 @@ class OAuthAuthenticator(BaseSaslAuthenticator):
         Return a string representation of the OPTIONAL key-value pairs
         that can be sent with an OAUTHBEARER initial request.
         """
-        # Only run if the #extensions() method is implemented
-        # by the clients Token Provider class
-        # Builds up a string separated by \x01 via a dict of key value pairs
         if callable(getattr(self._sasl_oauth_token_provider, "extensions", None)):
             extensions = self._sasl_oauth_token_provider.extensions()
             if len(extensions) > 0:
@@ -838,11 +744,7 @@ def get_ip_port_afi(host_and_port_str):
         af = _address_family(host_and_port_str)
         return host_and_port_str, DEFAULT_KAFKA_PORT, af
     else:
-        # now we have something with a colon in it and no square brackets. It could
-        # be either an IPv6 address literal (e.g., "::1") or an IP:port pair or a
-        # host:port pair
         try:
-            # if it decodes as an IPv6 address, use that
             socket.inet_pton(socket.AF_INET6, host_and_port_str)
         except AttributeError:
             log.warning(
@@ -850,7 +752,6 @@ def get_ip_port_afi(host_and_port_str):
                 " consider `pip install win_inet_pton`"
             )
         except (OSError, ValueError):
-            # it's a host:port pair
             pass
         else:
             return host_and_port_str, DEFAULT_KAFKA_PORT, socket.AF_INET6

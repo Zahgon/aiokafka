@@ -13,26 +13,6 @@ log = logging.getLogger(__name__)
 
 
 class ClusterMetadata:
-    """
-    A class to manage kafka cluster metadata.
-
-    This class does not perform any IO. It simply updates internal state
-    given API responses (MetadataResponse, FindCoordinatorResponse).
-
-    Keyword Arguments:
-        retry_backoff_ms (int): Milliseconds to backoff when retrying on
-            errors. Default: 100.
-        metadata_max_age_ms (int): The period of time in milliseconds after
-            which we force a refresh of metadata even if we haven't seen any
-            partition leadership changes to proactively discover any new
-            brokers or partitions. Default: 300000
-        bootstrap_servers: 'host[:port]' string (or list of 'host[:port]'
-            strings) that the client should contact to bootstrap initial
-            cluster metadata. This does not have to be the full node list.
-            It just needs to have at least one broker that will respond to a
-            Metadata API Request. Default port is 9092. If no servers are
-            specified, will default to localhost:9092.
-    """
 
     DEFAULT_CONFIG = {
         "retry_backoff_ms": 100,
@@ -43,7 +23,6 @@ class ClusterMetadata:
     def __init__(self, **configs):
         self._brokers = {}  # node_id -> BrokerMetadata
         self._partitions = {}  # topic -> partition -> PartitionMetadata
-        # node_id -> {TopicPartition...}
         self._broker_partitions = collections.defaultdict(set)
         self._last_refresh_ms = 0
         self._last_successful_refresh_ms = 0
@@ -63,18 +42,7 @@ class ClusterMetadata:
 
         self._bootstrap_brokers = self._generate_bootstrap_brokers()
 
-    def _generate_bootstrap_brokers(self):
-        # collect_hosts does not perform DNS, so we should be fine to re-use
-        bootstrap_hosts = collect_hosts(self.config["bootstrap_servers"])
 
-        brokers = {}
-        for i, (host, port, _) in enumerate(bootstrap_hosts):
-            node_id = f"bootstrap-{i}"
-            brokers[node_id] = BrokerMetadata(node_id, host, port, None)
-        return brokers
-
-    def is_bootstrap(self, node_id):
-        return node_id in self._bootstrap_brokers
 
     def brokers(self):
         """Get all BrokerMetadata
@@ -127,58 +95,16 @@ class ClusterMetadata:
         }
 
     def leader_for_partition(self, partition):
-        """Return node_id of leader, -1 unavailable, None if unknown."""
-        if partition.topic not in self._partitions:
-            return None
-        partitions = self._partitions[partition.topic]
-        if partition.partition not in partitions:
-            return None
-        return partitions[partition.partition].leader
+        pass
 
     def partitions_for_broker(self, broker_id):
-        """Return TopicPartitions for which the broker is a leader.
-
-        Arguments:
-            broker_id (int): node id for a broker
-
-        Returns:
-            set: {TopicPartition, ...}
-            None if the broker either has no partitions or does not exist.
-        """
-        return self._broker_partitions.get(broker_id)
+        pass
 
     def request_update(self):
-        """Flags metadata for update, return Future()
-
-        Actual update must be handled separately. This method will only
-        change the reported ttl()
-
-        Returns:
-            Future (value will be the cluster object after update)
-        """
-        with self._lock:
-            self._need_update = True
-            if not self._future or self._future.is_done:
-                self._future = Future()
-            return self._future
+        pass
 
     def topics(self, exclude_internal_topics=True):
-        """Get set of known topics.
-
-        Arguments:
-            exclude_internal_topics (bool): Whether records from internal topics
-                (such as offsets) should be exposed to the consumer. If set to
-                True the only way to receive records from an internal topic is
-                subscribing to it. Default True
-
-        Returns:
-            set: {topic (str), ...}
-        """
-        topics = set(self._partitions.keys())
-        if exclude_internal_topics:
-            return topics - self.internal_topics
-        else:
-            return topics
+        pass
 
     def failed_update(self, exception):
         """Update cluster state given a failed MetadataRequest."""
@@ -234,7 +160,6 @@ class ClusterMetadata:
             error_type = Errors.for_code(error_code)
             if error_type is Errors.NoError:
                 _new_partitions[topic] = {}
-                # Starting with v5, MetadataResponse contains more than 5 fields
                 for p_error, partition, leader, replicas, isr, *_ in partitions:
                     _new_partitions[topic][partition] = PartitionMetadata(
                         topic=topic,
@@ -249,7 +174,6 @@ class ClusterMetadata:
                             TopicPartition(topic, partition)
                         )
 
-            # Specific topic errors can be ignored if this is a full metadata fetch
             elif self.need_all_topic_metadata:
                 continue
 
@@ -293,38 +217,16 @@ class ClusterMetadata:
             listener(self)
 
         if self.need_all_topic_metadata:
-            # the listener may change the interested topics,
-            # which could cause another metadata refresh.
-            # If we have already fetched all topics, however,
-            # another fetch should be unnecessary.
             self._need_update = False
 
     def add_listener(self, listener):
-        """Add a callback function to be called on each metadata update"""
-        self._listeners.add(listener)
+        pass
 
     def remove_listener(self, listener):
-        """Remove a previously added listener callback"""
-        self._listeners.remove(listener)
+        pass
 
     def with_partitions(self, partitions_to_add):
-        """Returns a copy of cluster metadata with partitions added"""
-        new_metadata = ClusterMetadata(**self.config)
-        new_metadata._brokers = copy.deepcopy(self._brokers)
-        new_metadata._partitions = copy.deepcopy(self._partitions)
-        new_metadata._broker_partitions = copy.deepcopy(self._broker_partitions)
-        new_metadata.internal_topics = copy.deepcopy(self.internal_topics)
-        new_metadata.unauthorized_topics = copy.deepcopy(self.unauthorized_topics)
-
-        for partition in partitions_to_add:
-            new_metadata._partitions[partition.topic][partition.partition] = partition
-
-            if partition.leader is not None and partition.leader != -1:
-                new_metadata._broker_partitions[partition.leader].add(
-                    TopicPartition(partition.topic, partition.partition)
-                )
-
-        return new_metadata
+        pass
 
     def __str__(self):
         return (

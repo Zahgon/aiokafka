@@ -32,12 +32,6 @@ class ConsumerProtocolMemberAssignment(Struct):
         ("user_data", Bytes),
     )
 
-    def partitions(self) -> list[TopicPartition]:
-        return [
-            TopicPartition(topic, partition)
-            for topic, partitions in self.assignment
-            for partition in partitions
-        ]
 
 
 class ConsumerProtocol:

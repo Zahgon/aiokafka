@@ -31,7 +31,6 @@ class RequestHeader_v1(Struct):
 
 
 class RequestHeader_v2(Struct):
-    # Flexible response / request headers end in field buffer
     SCHEMA = Schema(
         ("api_key", Int16),
         ("api_version", Int16),
@@ -68,30 +67,6 @@ T = TypeVar("T", bound="RequestStruct")
 
 
 class Request(abc.ABC, Generic[T]):
-    """
-    Base class for all the requests classes.
-    The aiokafka clients must use children classes of Request
-    in order to communicate with the brokers.
-    The correct API versions will be negotiated per connection
-    basis, so this class is acting as a builder for the final
-    RequestStruct sent over the wire.
-
-    When implementing a Request sub-class, you must accept all
-    the different attributes in the constructor, then eventually
-    raise a IncompatibleBrokerVersion exception if the negotiated
-    version doesn't allow some attributes to be sent.
-
-    Type T is used to describe all the possible RequestStruct
-    classes supported, ordered by version ascending.
-
-    Attributes
-    ----------
-    API_KEY : int
-        The unique API key identifying the request.
-    ALLOW_UNKNOWN_API_VERSION: bool
-        If true, the request could be used without knowing
-        the API version
-    """
 
     API_KEY: ClassVar[int]
     ALLOW_UNKNOWN_API_VERSION: ClassVar[bool] = False
@@ -102,7 +77,6 @@ class Request(abc.ABC, Generic[T]):
         super().__init_subclass__()
         if not hasattr(cls, "API_KEY"):
             raise TypeError(f"{cls.__name__} must define class attributes 'API_KEY'")
-        # To be replaced by typing.get_original_bases when 3.12 is the min version
         if (
             hasattr(cls, "__orig_bases__")
             and (base_classes := cls.__orig_bases__)
@@ -143,20 +117,6 @@ class Request(abc.ABC, Generic[T]):
 
 
 class RequestStruct(Struct, metaclass=abc.ABCMeta):
-    """
-    Base structure for API requests.
-
-    Attributes
-    ----------
-    API_KEY : int
-        The unique API key identifying the request.
-    API_VERSION : int
-        Which API version the RequestStruct class is.
-    RESPONSE_TYPE : type[Response]
-        Class used to parse the response.
-    SCHEMA : Schema
-        An instance of Schema() representing the request structure.
-    """
 
     API_KEY: ClassVar[int]
     API_VERSION: ClassVar[int]
@@ -176,8 +136,6 @@ class RequestStruct(Struct, metaclass=abc.ABCMeta):
                 "'API_KEY', 'API_VERSION', 'RESPONSE_TYPE' and 'SCHEMA"
             )
 
-    def to_object(self) -> dict[str, Any]:
-        return _to_object(self.SCHEMA, self)
 
     def build_request_header(
         self, correlation_id: int, client_id: str
@@ -209,26 +167,5 @@ class Response(Struct, metaclass=abc.ABCMeta):
     def API_VERSION(self) -> int:
         """Integer of api request/response version"""
 
-    def to_object(self) -> dict[str, Any]:
-        return _to_object(self.SCHEMA, self)
 
 
-def _to_object(schema: Schema, data: Struct | dict[int, Any]) -> dict[str, Any]:
-    obj: dict[str, Any] = {}
-    for idx, (name, _type) in enumerate(zip(schema.names, schema.fields, strict=False)):
-        if isinstance(data, Struct):
-            val = data.get_item(name)
-        else:
-            val = data[idx]
-
-        if isinstance(_type, Schema):
-            obj[name] = _to_object(_type, val)
-        elif isinstance(_type, Array):
-            if isinstance(_type.array_of, Schema):
-                obj[name] = [_to_object(_type.array_of, x) for x in val]
-            else:
-                obj[name] = val
-        else:
-            obj[name] = val
-
-    return obj

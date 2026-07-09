@@ -20,10 +20,6 @@ class ControlRecord:
 
     __hash__ = object.__hash__  # unhashable
 
-    @classmethod
-    def parse(cls, data: bytes) -> Self:
-        version, type_ = _SCHEMA.unpack_from(data)
-        return cls(version, type_)
 
     def __repr__(self) -> str:
         return f"ControlRecord(version={self.version}, type_={self.type_})"

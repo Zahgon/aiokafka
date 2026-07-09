@@ -668,9 +668,6 @@ class DescribeAclsRequest_v1(RequestStruct):
 
 
 class DescribeAclsRequest_v2(RequestStruct):
-    """
-    Enable flexible version
-    """
 
     API_KEY = 29
     API_VERSION = 2

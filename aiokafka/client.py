@@ -44,38 +44,6 @@ class CoordinationType(IntEnum):
 
 
 class AIOKafkaClient:
-    """Initialize an asynchronous kafka client
-
-    Keyword Arguments:
-        bootstrap_servers: 'host[:port]' string (or list of 'host[:port]'
-            strings) that the consumer should contact to bootstrap initial
-            cluster metadata. This does not have to be the full node list.
-            It just needs to have at least one broker that will respond to
-            Metadata API Request. Default port is 9092. If no servers are
-            specified, will default to localhost:9092.
-        client_id (str): a name for this client. This string is passed in
-            each request to servers and can be used to identify specific
-            server-side log entries that correspond to this client. Also
-            submitted to GroupCoordinator for logging with respect to
-            consumer group administration. Default: 'aiokafka-{ver}'
-        request_timeout_ms (int): Client request timeout in milliseconds.
-            Default: 40000.
-        metadata_max_age_ms (int): The period of time in milliseconds after
-            which we force a refresh of metadata even if we haven't seen
-            any partition leadership changes to proactively discover any
-            new brokers or partitions. Default: 300000
-        retry_backoff_ms (int): Milliseconds to backoff when retrying on
-            errors. Default: 100.
-        security_protocol (str): Protocol used to communicate with brokers.
-            Valid values are: PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL.
-            Default: PLAINTEXT.
-        ssl_context (ssl.SSLContext): pre-configured SSLContext for wrapping
-            socket connections. For more information see :ref:`ssl_auth`.
-            Default: None.
-        connections_max_idle_ms (int): Close idle connections after the number
-            of milliseconds specified by this config. Specifying `None` will
-            disable idle checks. Default: 540000 (9 minutes).
-    """
 
     def __init__(
         self,
@@ -160,18 +128,10 @@ class AIOKafkaClient:
         self._md_update_waiter = loop.create_future()
         self._get_conn_lock_value = None
 
-    @property
-    def _get_conn_lock(self):
-        if self._get_conn_lock_value is None:
-            self._get_conn_lock_value = asyncio.Lock()
-        return self._get_conn_lock_value
 
     def __repr__(self):
         return f"<AIOKafkaClient client_id={self._client_id}>"
 
-    @property
-    def hosts(self):
-        return collect_hosts(self._bootstrap_servers)
 
     async def close(self):
         if self._sync_task:
@@ -179,8 +139,6 @@ class AIOKafkaClient:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._sync_task
             self._sync_task = None
-        # Be careful to wait for graceful closure of all connections, so we
-        # process all pending buffers.
         futs = [
             conn.close(reason=CloseReason.SHUTDOWN) for conn in self._conns.values()
         ]
@@ -227,9 +185,6 @@ class AIOKafkaClient:
 
             self.cluster.update_metadata(metadata)
 
-            # A cluster with no topics can return no broker metadata...
-            # In that case, we should keep the bootstrap connection till
-            # we get a normal cluster layout.
             if not len(self.cluster.brokers()):
                 bootstrap_id = ("bootstrap", ConnectionGroup.DEFAULT)
                 self._conns[bootstrap_id] = bootstrap_conn
@@ -242,7 +197,6 @@ class AIOKafkaClient:
             raise KafkaConnectionError(f"Unable to bootstrap from {self.hosts}")
 
         if self._sync_task is None:
-            # starting metadata synchronizer task
             self._sync_task = create_task(self._md_synchronizer())
 
     async def _md_synchronizer(self):
@@ -258,28 +212,15 @@ class AIOKafkaClient:
             if self._md_update_fut is None:
                 self._md_update_fut = create_future()
             ret = await self._metadata_update(self.cluster, topics)
-            # If list of topics changed during metadata update we must update
-            # it again right away.
             if topics != self._topics:
                 continue
-            # Earlier this waiter was set before sending metadata_request,
-            # but that was to avoid topic list changes being unnoticed, which
-            # is handled explicitly now.
             self._md_update_waiter = create_future()
 
             self._md_update_fut.set_result(ret)
             self._md_update_fut = None
 
     def get_random_node(self):
-        """choice random node from known cluster brokers
-
-        Returns:
-            nodeId - identifier of broker
-        """
-        nodeids = [b.nodeId for b in self.cluster.brokers()]
-        if not nodeids:
-            return None
-        return random.choice(nodeids)
+        pass
 
     async def _metadata_update(self, cluster_metadata, topics):
         assert isinstance(cluster_metadata, ClusterMetadata)
@@ -306,16 +247,11 @@ class AIOKafkaClient:
                 )
                 continue
 
-            # don't update the cluster if there are no valid nodes...the topic
-            # we want may still be in the process of being created which means
-            # we will get errors and no nodes until it exists
             if not metadata.brokers:
                 return False
 
             cluster_metadata.update_metadata(metadata)
 
-            # We only keep bootstrap connection to update metadata until
-            # proper cluster layout is available.
             if bootstrap_id in self._conns and len(self.cluster.brokers()):
                 conn = self._conns.pop(bootstrap_id)
                 conn.close()
@@ -334,19 +270,11 @@ class AIOKafkaClient:
             True/False - metadata updated or not
         """
         if self._md_update_fut is None:
-            # Wake up the `_md_synchronizer` task
             if not self._md_update_waiter.done():
                 self._md_update_waiter.set_result(None)
             self._md_update_fut = self._loop.create_future()
-        # Metadata will be updated in the background by synchronizer
         return asyncio.shield(self._md_update_fut)
 
-    async def fetch_all_metadata(self):
-        cluster_md = ClusterMetadata(metadata_max_age_ms=self._metadata_max_age_ms)
-        updated = await self._metadata_update(cluster_md, None)
-        if not updated:
-            raise KafkaError("Unable to get cluster metadata over all known brokers")
-        return cluster_md
 
     def add_topic(self, topic):
         """Add a topic to the list of topics tracked via metadata.
@@ -363,26 +291,10 @@ class AIOKafkaClient:
         return res
 
     def set_topics(self, topics):
-        """Set specific topics to track for metadata.
-
-        Arguments:
-            topics (list of str): topics to track
-        """
-        assert not isinstance(topics, str)
-        if not topics or set(topics).difference(self._topics):
-            res = self.force_metadata_update()
-        else:
-            res = self._loop.create_future()
-            res.set_result(True)
-        self._topics = set(topics)
-        return res
+        pass
 
     def _on_connection_closed(self, conn, reason):
-        """Callback called when connection is closed"""
-        # Connection failures imply that our metadata is stale, so let's
-        # refresh
-        if reason in [CloseReason.CONNECTION_BROKEN, CloseReason.CONNECTION_TIMEOUT]:
-            self.force_metadata_update()
+        pass
 
     async def _get_conn(self, node_id, *, group=ConnectionGroup.DEFAULT, no_hint=False):
         "Get or create a connection to a broker using host and port"
@@ -397,10 +309,6 @@ class AIOKafkaClient:
         try:
             broker = self.cluster.broker_metadata(node_id)
 
-            # XXX: earlier we only did an asserts, but it seems it's
-            # possible to get a leader/coordinator that is for
-            # some reason not in metadata.
-            # I think requiring metadata should solve this problem
             if broker is None:
                 raise StaleMetadata(f"Broker id {node_id} not in current metadata")
 
@@ -433,8 +341,6 @@ class AIOKafkaClient:
                 )
         except (OSError, asyncio.TimeoutError, KafkaError) as err:
             log.error("Unable connect to node with id %s: %s", node_id, err)
-            # Connection failures imply that our metadata is stale, so
-            # let's refresh
             self.force_metadata_update()
             return None
         else:
@@ -466,7 +372,6 @@ class AIOKafkaClient:
                 f" which is not ready (node id {node_id})."
             )
 
-        # Every request gets a response, except one special case:
         expect_response = True
         if isinstance(request, ProduceRequest) and request.required_acks == 0:
             expect_response = False
@@ -477,7 +382,6 @@ class AIOKafkaClient:
         try:
             result = await future
         except asyncio.TimeoutError as exc:
-            # close connection so it is renewed in next request
             self._conns[(node_id, group)].close(reason=CloseReason.CONNECTION_TIMEOUT)
             raise RequestTimedOutError() from exc
         else:
@@ -502,7 +406,6 @@ class AIOKafkaClient:
         if partitions is not None:
             return partitions
 
-        # add topic to metadata topic list if it is not there already.
         self.add_topic(topic)
 
         t0 = time.monotonic()
@@ -517,31 +420,6 @@ class AIOKafkaClient:
                 raise Errors.TopicAuthorizationFailedError(topic)
             await asyncio.sleep(self._retry_backoff)
 
-    async def _maybe_wait_metadata(self):
-        if self._md_update_fut is not None:
-            await asyncio.shield(self._md_update_fut)
 
     async def coordinator_lookup(self, coordinator_type, coordinator_key):
-        """Lookup which node in the cluster is the coordinator for a certain
-        role (Transaction coordinator or Group coordinator atm.)
-        NOTE: Client keeps track of all coordination nodes separately, as they
-        all have different sockets and ids.
-        """
-
-        node_id = self.get_random_node()
-        assert node_id is not None, "Did we not perform bootstrap?"
-
-        log.debug(
-            "Sending FindCoordinator request for key %s to broker %s",
-            coordinator_key,
-            node_id,
-        )
-
-        request = FindCoordinatorRequest(coordinator_key, coordinator_type)
-        resp = await self.send(node_id, request)
-        log.debug("Received group coordinator response %s", resp)
-        error_type = Errors.for_code(resp.error_code)
-        if error_type is not Errors.NoError:
-            err = error_type()
-            raise err
-        return resp.coordinator_id
+        pass

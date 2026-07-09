@@ -53,7 +53,6 @@ class LegacyRecordBase:
         "i"  # Size
     )
     MAGIC_OFFSET = LOG_OVERHEAD + struct.calcsize(">I")  # CRC
-    # Those are used for fast size calculations
     RECORD_OVERHEAD_V0 = struct.calcsize(
         ">I"  # CRC
         "b"  # magic
@@ -127,108 +126,14 @@ class _LegacyRecordBatchPy(LegacyRecordBase, LegacyRecordBatchProtocol):
 
     @property
     def _timestamp_type(self) -> Literal[0, 1] | None:
-        """0 for CreateTime; 1 for LogAppendTime; None if unsupported.
+        pass
 
-        Value is determined by broker; produced messages should always set to 0
-        Requires Kafka >= 0.10 / message version >= 1
-        """
-        if self._magic == 0:
-            return None
-        elif self._attributes & self.TIMESTAMP_TYPE_MASK:
-            return 1
-        else:
-            return 0
 
-    @property
-    def _compression_type(self) -> int:
-        return self._attributes & self.CODEC_MASK
 
-    @property
-    def next_offset(self) -> int:
-        return self._offset + 1
 
-    def validate_crc(self) -> bool:
-        crc = crc32(self._buffer[self.MAGIC_OFFSET :])
-        return self._crc == crc
 
-    def _decompress(self, key_offset: int) -> bytes:
-        # Copy of `_read_key_value`, but uses memoryview
-        pos = key_offset
-        key_size = struct.unpack_from(">i", self._buffer, pos)[0]
-        pos += self.KEY_LENGTH
-        if key_size != -1:
-            pos += key_size
-        value_size = struct.unpack_from(">i", self._buffer, pos)[0]
-        pos += self.VALUE_LENGTH
-        if value_size == -1:
-            raise CorruptRecordException("Value of compressed message is None")
-        else:
-            data = self._buffer[pos : pos + value_size]
 
-        compression_type = self._compression_type
-        assert self._assert_has_codec(compression_type)
-        if compression_type == self.CODEC_GZIP:
-            uncompressed = gzip_decode(data)
-        elif compression_type == self.CODEC_SNAPPY:
-            uncompressed = snappy_decode(data.tobytes())
-        elif compression_type == self.CODEC_LZ4:
-            if self._magic == 0:
-                # https://issues.apache.org/jira/browse/KAFKA-3160
-                raise UnsupportedCodecError(
-                    "LZ4 is not supported for broker version 0.8/0.9"
-                )
-            else:
-                uncompressed = lz4_decode(data.tobytes())
-        else:
-            # Must not be possible
-            raise RuntimeError(f"Invalid compression codec {compression_type:#04x}")
-        return uncompressed
 
-    def _read_header(self, pos: int) -> tuple[int, int, int, int, int, int | None]:
-        if self._magic == 0:
-            offset, length, crc, magic_read, attrs = self.HEADER_STRUCT_V0.unpack_from(
-                self._buffer, pos
-            )
-            timestamp = None
-        else:
-            (
-                offset,
-                length,
-                crc,
-                magic_read,
-                attrs,
-                timestamp,
-            ) = self.HEADER_STRUCT_V1.unpack_from(self._buffer, pos)
-        return offset, length, crc, magic_read, attrs, timestamp
-
-    def _read_all_headers(
-        self,
-    ) -> list[tuple[tuple[int, int, int, int, int, int | None], int]]:
-        pos = 0
-        msgs: list[tuple[tuple[int, int, int, int, int, int | None], int]] = []
-        buffer_len = len(self._buffer)
-        while pos < buffer_len:
-            header = self._read_header(pos)
-            msgs.append((header, pos))
-            pos += self.LOG_OVERHEAD + header[1]  # length
-        return msgs
-
-    def _read_key_value(self, pos: int) -> tuple[bytes | None, bytes | None]:
-        key_size: int = struct.unpack_from(">i", self._buffer, pos)[0]
-        pos += self.KEY_LENGTH
-        if key_size == -1:
-            key = None
-        else:
-            key = self._buffer[pos : pos + key_size].tobytes()
-            pos += key_size
-
-        value_size: int = struct.unpack_from(">i", self._buffer, pos)[0]
-        pos += self.VALUE_LENGTH
-        if value_size == -1:
-            value = None
-        else:
-            value = self._buffer[pos : pos + value_size].tobytes()
-        return key, value
 
     def __iter__(self) -> Generator[_LegacyRecordPy, None, None]:
         if self._magic == 1:
@@ -238,13 +143,10 @@ class _LegacyRecordBatchPy(LegacyRecordBase, LegacyRecordBatchProtocol):
         timestamp_type = self._timestamp_type
 
         if self._compression_type:
-            # In case we will call iter again
             if not self._decompressed:
                 self._buffer = memoryview(self._decompress(key_offset))
                 self._decompressed = True
 
-            # If relative offset is used, we need to decompress the entire
-            # message first to compute the absolute offset.
             headers = self._read_all_headers()
             if self._magic > 0:
                 msg_header, _ = headers[-1]
@@ -254,15 +156,11 @@ class _LegacyRecordBatchPy(LegacyRecordBase, LegacyRecordBatchProtocol):
 
             for header, msg_pos in headers:
                 offset, _, crc, _, attrs, timestamp = header
-                # There should only ever be a single layer of compression
                 assert not attrs & self.CODEC_MASK, (
                     f"MessageSet at offset {offset} appears double-compressed. This "
                     "should not happen -- check your producers!"
                 )
 
-                # When magic value is greater than 0, the timestamp
-                # of a compressed message depends on the
-                # typestamp type of the wrapper message:
                 if timestamp_type == self.LOG_APPEND_TIME:
                     timestamp = self._timestamp
 
@@ -292,13 +190,7 @@ class _LegacyRecordPy(LegacyRecordProtocol):
     value: bytes | None
     crc: int
 
-    @property
-    def headers(self) -> list[Never]:
-        return []
 
-    @property
-    def checksum(self) -> int:
-        return self.crc
 
     def __repr__(self) -> str:
         return (
@@ -339,14 +231,12 @@ class _LegacyRecordBatchBuilderPy(LegacyRecordBase, LegacyRecordBatchBuilderProt
         elif timestamp is None:
             timestamp = int(time.time() * 1000)
 
-        # calculating length is not cheap; only do it once
         key_size = len(key) if key is not None else 0
         value_size = len(value) if value is not None else 0
 
         pos = self._pos
         size = self._size_in_bytes(key_size, value_size)
 
-        # always allow at least one record to be appended
         if offset != 0 and pos + size >= self._batch_size:
             return None
 
@@ -360,8 +250,6 @@ class _LegacyRecordBatchBuilderPy(LegacyRecordBase, LegacyRecordBatchBuilderProt
             return _LegacyRecordMetadataPy(offset, crc, size, timestamp)
 
         except struct.error as exc:
-            # perform expensive type checking only to translate struct errors
-            # to human-readable messages
             if not isinstance(offset, int):
                 raise TypeError(offset) from exc
             if not isinstance(timestamp, int):
@@ -461,7 +349,6 @@ class _LegacyRecordBatchBuilderPy(LegacyRecordBase, LegacyRecordBatchBuilderProt
                 compressed = snappy_encode(buf)
             elif self._compression_type == self.CODEC_LZ4:
                 if self._magic == 0:
-                    # https://issues.apache.org/jira/browse/KAFKA-3160
                     raise UnsupportedCodecError(
                         "LZ4 is not supported for broker version 0.8/0.9"
                     )
@@ -469,7 +356,6 @@ class _LegacyRecordBatchBuilderPy(LegacyRecordBase, LegacyRecordBatchBuilderProt
                     compressed = lz4_encode(bytes(buf))
 
             else:
-                # Must not be possible
                 raise RuntimeError(
                     f"Invalid compression codec {self._compression_type:#04x}"
                 )
@@ -500,8 +386,7 @@ class _LegacyRecordBatchBuilderPy(LegacyRecordBase, LegacyRecordBatchBuilderProt
         return self._buffer
 
     def size(self) -> int:
-        """Return current size of data written to buffer"""
-        return self._pos
+        pass
 
     def size_in_bytes(
         self,
@@ -510,10 +395,7 @@ class _LegacyRecordBatchBuilderPy(LegacyRecordBase, LegacyRecordBatchBuilderProt
         key: bytes | None,
         value: bytes | None,
     ) -> int:
-        """Actual size of message to add"""
-        key_size = len(key) if key is not None else 0
-        value_size = len(value) if value is not None else 0
-        return self._size_in_bytes(key_size, value_size)
+        pass
 
     def _size_in_bytes(self, key_size: int, value_size: int) -> int:
         return (
@@ -523,12 +405,6 @@ class _LegacyRecordBatchBuilderPy(LegacyRecordBase, LegacyRecordBatchBuilderProt
             + value_size
         )
 
-    @classmethod
-    def record_overhead(cls, magic: int) -> int:
-        try:
-            return cls.RECORD_OVERHEAD[magic]
-        except KeyError:
-            raise ValueError(f"Unsupported magic: {magic}") from None
 
 
 @final
@@ -541,21 +417,9 @@ class _LegacyRecordMetadataPy(LegacyRecordMetadataProtocol):
         self._size = size
         self._timestamp = timestamp
 
-    @property
-    def offset(self) -> int:
-        return self._offset
 
-    @property
-    def crc(self) -> int:
-        return self._crc
 
-    @property
-    def size(self) -> int:
-        return self._size
 
-    @property
-    def timestamp(self) -> int:
-        return self._timestamp
 
     def __repr__(self) -> str:
         return (

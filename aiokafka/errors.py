@@ -2,12 +2,10 @@ from collections.abc import Iterable
 from typing import Any, TypeVar
 
 __all__ = [  # noqa: RUF022
-    # aiokafka custom errors
     "ConsumerStoppedError",
     "NoOffsetForPartitionError",
     "RecordTooLargeError",
     "ProducerClosed",
-    # Kafka Python errors
     "KafkaError",
     "IllegalStateError",
     "IllegalArgumentError",
@@ -24,7 +22,6 @@ __all__ = [  # noqa: RUF022
     "AuthenticationMethodNotSupported",
     "AuthenticationFailedError",
     "BrokerResponseError",
-    # Numbered errors
     "NoError",  # 0
     "UnknownError",  # -1
     "OffsetOutOfRangeError",  # 1
@@ -80,7 +77,6 @@ __all__ = [  # noqa: RUF022
 
 class KafkaError(RuntimeError):
     retriable = False
-    # whether metadata should be refreshed on error
     invalid_metadata = False
 
     def __str__(self) -> str:
@@ -191,16 +187,11 @@ class QuotaViolationError(KafkaError):
 
 
 class ConsumerStoppedError(Exception):
-    """Raised on `get*` methods of Consumer if it's cancelled, even pending
-    ones.
-    """
+    pass
 
 
 class IllegalOperation(Exception):
-    """Raised if you try to execute an operation, that is not available with
-    current configuration. For example trying to commit if no group_id was
-    given.
-    """
+    pass
 
 
 class NoOffsetForPartitionError(KafkaError):
@@ -216,10 +207,6 @@ class ProducerClosed(KafkaError):
 
 
 class ProducerFenced(KafkaError):
-    """Another producer with the same transactional ID went online.
-    NOTE: As it seems this will be raised by Broker if transaction timeout
-    occurred also.
-    """
 
     def __init__(
         self,
@@ -272,7 +259,6 @@ class CorruptRecordException(BrokerResponseError):
     )
 
 
-# Backward compatibility
 InvalidMessageError = CorruptRecordException
 
 
@@ -369,8 +355,6 @@ class OffsetMetadataTooLargeError(BrokerResponseError):
     )
 
 
-# TODO is this deprecated?
-# https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol#AGuideToTheKafkaProtocol-ErrorCodes
 class StaleLeaderEpochCodeError(BrokerResponseError):
     errno = 13
     message = "STALE_LEADER_EPOCH_CODE"

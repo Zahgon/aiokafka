@@ -123,11 +123,6 @@ class FetchResponse_v5(Response):
 
 
 class FetchResponse_v6(Response):
-    """
-    Same as FetchResponse_v5. The version number is bumped up to indicate that the
-    client supports KafkaStorageException. The KafkaStorageException will be translated
-    to NotLeaderForPartitionException in the response if version <= 5
-    """
 
     API_KEY = 1
     API_VERSION = 6
@@ -135,9 +130,6 @@ class FetchResponse_v6(Response):
 
 
 class FetchResponse_v7(Response):
-    """
-    Add error_code and session_id to response
-    """
 
     API_KEY = 1
     API_VERSION = 7
@@ -283,7 +275,6 @@ class FetchRequest_v3(RequestStruct):
 
 
 class FetchRequest_v4(RequestStruct):
-    # Adds isolation_level field
     API_KEY = 1
     API_VERSION = 4
     RESPONSE_TYPE = FetchResponse_v4
@@ -309,7 +300,6 @@ class FetchRequest_v4(RequestStruct):
 
 
 class FetchRequest_v5(RequestStruct):
-    # This may only be used in broker-broker api calls
     API_KEY = 1
     API_VERSION = 5
     RESPONSE_TYPE = FetchResponse_v5
@@ -338,12 +328,6 @@ class FetchRequest_v5(RequestStruct):
 
 
 class FetchRequest_v6(RequestStruct):
-    """
-    The body of FETCH_REQUEST_V6 is the same as FETCH_REQUEST_V5. The version number is
-    bumped up to indicate that the client supports KafkaStorageException. The
-    KafkaStorageException will be translated to NotLeaderForPartitionException in the
-    response if version <= 5
-    """
 
     API_KEY = 1
     API_VERSION = 6
@@ -352,9 +336,6 @@ class FetchRequest_v6(RequestStruct):
 
 
 class FetchRequest_v7(RequestStruct):
-    """
-    Add incremental fetch requests
-    """
 
     API_KEY = 1
     API_VERSION = 7
@@ -390,10 +371,6 @@ class FetchRequest_v7(RequestStruct):
 
 
 class FetchRequest_v8(RequestStruct):
-    """
-    bump used to indicate that on quota violation brokers send out responses before
-    throttling.
-    """
 
     API_KEY = 1
     API_VERSION = 8
@@ -402,9 +379,6 @@ class FetchRequest_v8(RequestStruct):
 
 
 class FetchRequest_v9(RequestStruct):
-    """
-    adds the current leader epoch (see KIP-320)
-    """
 
     API_KEY = 1
     API_VERSION = 9
@@ -444,9 +418,6 @@ class FetchRequest_v9(RequestStruct):
 
 
 class FetchRequest_v10(RequestStruct):
-    """
-    bumped up to indicate ZStandard capability. (see KIP-110)
-    """
 
     API_KEY = 1
     API_VERSION = 10
@@ -455,9 +426,6 @@ class FetchRequest_v10(RequestStruct):
 
 
 class FetchRequest_v11(RequestStruct):
-    """
-    added rack ID to support read from followers (KIP-392)
-    """
 
     API_KEY = 1
     API_VERSION = 11
@@ -528,23 +496,12 @@ class FetchRequest(Request[FetchRequestStruct]):
         self._topics = topics
         self._rack_id = rack_id
 
-    @property
-    def topics(self) -> list[tuple[str, list[tuple[int, int, int]]]]:
-        return self._topics
 
     def build(
         self, request_struct_class: type[FetchRequestStruct]
     ) -> FetchRequestStruct:
         api_version = request_struct_class.API_VERSION
 
-        # v0..v3 do not support isolation_level. v4 adds isolation_level
-        # but keeps the v0 per-partition layout. v5+ adds per-partition
-        # `log_start_offset`. v9+ also adds `current_leader_epoch`. v7+
-        # adds incremental fetch session fields and forgotten_topics_data.
-        # v11 adds top-level rack_id.
-        # We silently allow `rack_id` to be set on the FetchRequest builder
-        # so callers don't have to branch -- it is simply not transmitted on
-        # versions < 11.
 
         if api_version == 4:
             return request_struct_class(
@@ -557,9 +514,6 @@ class FetchRequest(Request[FetchRequestStruct]):
             )
 
         if api_version >= 5:
-            # v5+ adds per-partition `log_start_offset`. v9+ also adds
-            # `current_leader_epoch`. v7+ adds incremental fetch session
-            # fields and forgotten_topics_data. v11 adds top-level rack_id.
             include_leader_epoch = api_version >= 9
             partitions_by_topic: list[tuple[str, list[tuple[int, ...]]]] = []
             for topic, partitions in self._topics:

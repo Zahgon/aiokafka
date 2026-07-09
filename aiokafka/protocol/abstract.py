@@ -14,6 +14,3 @@ class AbstractType(Generic[T], metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def decode(cls, data: BytesIO) -> T: ...
 
-    @classmethod
-    def repr(cls, value: T) -> str:
-        return repr(value)

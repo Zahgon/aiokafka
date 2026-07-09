@@ -75,11 +75,6 @@ class ProduceResponse_v3(Response):
 
 
 class ProduceResponse_v4(Response):
-    """
-    The version number is bumped up to indicate that the client supports
-    KafkaStorageException. The KafkaStorageException will be translated to
-    NotLeaderForPartitionException in the response if version <= 3
-    """
 
     API_KEY = 0
     API_VERSION = 4
@@ -111,10 +106,6 @@ class ProduceResponse_v5(Response):
 
 
 class ProduceResponse_v6(Response):
-    """
-    The version number is bumped to indicate that on quota violation brokers send out
-    responses before throttling.
-    """
 
     API_KEY = 0
     API_VERSION = 6
@@ -122,9 +113,6 @@ class ProduceResponse_v6(Response):
 
 
 class ProduceResponse_v7(Response):
-    """
-    V7 bumped up to indicate ZStandard capability. (see KIP-110)
-    """
 
     API_KEY = 0
     API_VERSION = 7
@@ -132,10 +120,6 @@ class ProduceResponse_v7(Response):
 
 
 class ProduceResponse_v8(Response):
-    """
-    V8 bumped up to add two new fields record_errors offset list and error_message
-    (See KIP-467)
-    """
 
     API_KEY = 0
     API_VERSION = 8
@@ -218,11 +202,6 @@ class ProduceRequest_v3(RequestStruct):
 
 
 class ProduceRequest_v4(RequestStruct):
-    """
-    The version number is bumped up to indicate that the client supports
-    KafkaStorageException. The KafkaStorageException will be translated to
-    NotLeaderForPartitionException in the response if version <= 3
-    """
 
     API_KEY = 0
     API_VERSION = 4
@@ -231,10 +210,6 @@ class ProduceRequest_v4(RequestStruct):
 
 
 class ProduceRequest_v5(RequestStruct):
-    """
-    Same as v4. The version number is bumped since the v5 response includes an
-    additional partition level field: the log_start_offset.
-    """
 
     API_KEY = 0
     API_VERSION = 5
@@ -243,10 +218,6 @@ class ProduceRequest_v5(RequestStruct):
 
 
 class ProduceRequest_v6(RequestStruct):
-    """
-    The version number is bumped to indicate that on quota violation brokers send out
-    responses before throttling.
-    """
 
     API_KEY = 0
     API_VERSION = 6
@@ -255,9 +226,6 @@ class ProduceRequest_v6(RequestStruct):
 
 
 class ProduceRequest_v7(RequestStruct):
-    """
-    V7 bumped up to indicate ZStandard capability. (see KIP-110)
-    """
 
     API_KEY = 0
     API_VERSION = 7
@@ -266,10 +234,6 @@ class ProduceRequest_v7(RequestStruct):
 
 
 class ProduceRequest_v8(RequestStruct):
-    """
-    V8 bumped up to add two new fields record_errors offset list and error_message to
-    PartitionResponse (See KIP-467)
-    """
 
     API_KEY = 0
     API_VERSION = 8
@@ -286,8 +250,6 @@ ProduceRequestStruct: TypeAlias = (
     | ProduceRequest_v5
     | ProduceRequest_v6
     | ProduceRequest_v7
-    # Not supported yet
-    # | ProduceRequest_v8
 )
 
 
@@ -306,9 +268,6 @@ class ProduceRequest(Request[ProduceRequestStruct]):
         self._timeout = timeout
         self._topics = topics
 
-    @property
-    def required_acks(self) -> int:
-        return self._required_acks
 
     def build(
         self, request_struct_class: type[ProduceRequestStruct]

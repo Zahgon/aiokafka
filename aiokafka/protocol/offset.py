@@ -79,9 +79,6 @@ class OffsetResponse_v2(Response):
 
 
 class OffsetResponse_v3(Response):
-    """
-    on quota violation, brokers send out responses before throttling
-    """
 
     API_KEY = 2
     API_VERSION = 3
@@ -89,9 +86,6 @@ class OffsetResponse_v3(Response):
 
 
 class OffsetResponse_v4(Response):
-    """
-    Add leader_epoch to response
-    """
 
     API_KEY = 2
     API_VERSION = 4
@@ -117,9 +111,6 @@ class OffsetResponse_v4(Response):
 
 
 class OffsetResponse_v5(Response):
-    """
-    adds a new error code, OFFSET_NOT_AVAILABLE
-    """
 
     API_KEY = 2
     API_VERSION = 5
@@ -194,9 +185,6 @@ class OffsetRequest_v3(RequestStruct):
 
 
 class OffsetRequest_v4(RequestStruct):
-    """
-    Add current_leader_epoch to request
-    """
 
     API_KEY = 2
     API_VERSION = 4
@@ -232,9 +220,6 @@ class OffsetRequest_v5(RequestStruct):
 
 OffsetRequestStruct: TypeAlias = (
     OffsetRequest_v0 | OffsetRequest_v1 | OffsetRequest_v2 | OffsetRequest_v3
-    # Not yet supported
-    #  | OffsetRequest_v4
-    #  | OffsetRequest_v5
 )
 
 

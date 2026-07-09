@@ -12,9 +12,6 @@ log = logging.getLogger(__name__)
 
 
 class AbstractPartitionAssignor(abc.ABC):
-    """Abstract assignor implementation which does some common grunt work (in particular
-    collecting partition counts which are always needed in assignors).
-    """
 
     @property
     @abc.abstractmethod

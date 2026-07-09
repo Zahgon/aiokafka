@@ -139,9 +139,6 @@ class String:
             raise ValueError("Buffer underrun decoding string")
         return value.decode(self.encoding)
 
-    @classmethod
-    def repr(cls, value: str) -> str:
-        return repr(value)
 
 
 class Bytes(AbstractType[bytes | None]):
@@ -162,11 +159,6 @@ class Bytes(AbstractType[bytes | None]):
             raise ValueError("Buffer underrun decoding Bytes")
         return value
 
-    @classmethod
-    def repr(cls, value: bytes | None) -> str:
-        return repr(
-            value[:100] + b"..." if value is not None and len(value) > 100 else value
-        )
 
 
 class Boolean(AbstractType[bool]):
@@ -220,9 +212,6 @@ class Schema:
         self.fields = tuple(all_fields)
         self.tags = tuple(all_tags)
 
-    @property
-    def has_tagged_fields(self) -> bool:
-        return self.tagged_fields_offset >= 0
 
     def encode(self, item: Sequence[Any]) -> bytes:
         if len(item) != len(self.fields):
@@ -282,11 +271,6 @@ class Schema:
 
     @staticmethod
     def _decode_tagged_fields(data: BytesIO) -> dict[int, bytes]:
-        # According to the specs https://cwiki.apache.org/confluence/display/KAFKA/KIP-482%3A+The+Kafka+Protocol+should+Support+Optional+Tagged+Fields
-        # "They are serialized in ascending order of their tag"
-        # On deserialize, we prefer supporting any order:
-        # * it doesn't complexify the implementation
-        # * it is more robust in case a future broker version produce them unordered
         num_fields = UnsignedVarInt32.decode(data)
         ret: dict[int, bytes] = {}
         if not num_fields:
@@ -301,18 +285,6 @@ class Schema:
     def __len__(self) -> int:
         return len(self.fields)
 
-    def repr(self, value: Any) -> str:
-        key_vals: list[str] = []
-        try:
-            for i in range(len(self)):
-                try:
-                    field_val = getattr(value, self.names[i])
-                except AttributeError:
-                    field_val = value[i]
-                key_vals.append(f"{self.names[i]}={self.fields[i].repr(field_val)}")
-            return "(" + ", ".join(key_vals) + ")"
-        except Exception:  # noqa: BLE001
-            return repr(value)
 
 
 class Array:
@@ -361,10 +333,6 @@ class Array:
             return None
         return [self.array_of.decode(data) for _ in range(length)]
 
-    def repr(self, list_of_items: Sequence[Any] | None) -> str:
-        if list_of_items is None:
-            return "NULL"
-        return "[" + ", ".join(self.array_of.repr(item) for item in list_of_items) + "]"
 
 
 class UnsignedVarInt32(AbstractType[int]):
@@ -403,7 +371,6 @@ class VarInt32(AbstractType[int]):
 
     @classmethod
     def encode(cls, value: int) -> bytes:
-        # bring it in line with the java binary repr
         value &= 0xFFFFFFFF
         return UnsignedVarInt32.encode((value << 1) ^ (value >> 31))
 
@@ -426,7 +393,6 @@ class VarInt64(AbstractType[int]):
 
     @classmethod
     def encode(cls, value: int) -> bytes:
-        # bring it in line with the java binary repr
         value &= 0xFFFFFFFFFFFFFFFF
         v = (value << 1) ^ (value >> 63)
         ret = b""

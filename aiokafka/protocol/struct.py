@@ -34,10 +34,6 @@ class Struct:
             data = BytesIO(data)
         return cls(*cls.SCHEMA.decode(data))
 
-    def get_item(self, name: str) -> Any:
-        if name not in self.SCHEMA.names:
-            raise KeyError(f"{name} is not in the schema")
-        return self.__dict__[name]
 
     def __repr__(self) -> str:
         key_vals: list[str] = []

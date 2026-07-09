@@ -1,0 +1,28 @@
+{
+  "repo": "aio-libs/aiokafka",
+  "reference_commit": "0ff6e7123a887fe254bb06b5d1f7b2742e6c4274",
+  "setup": {
+    "install": "pip install -e \".[all]\"",
+    "packages": "",
+    "pip_packages": [
+      "async-timeout",
+      "build==1.3.0",
+      "diff-cover==9.7.2",
+      "packaging",
+      "pytest",
+      "pytest-json-report",
+      "typing_extensions >=4.10.0"
+    ],
+    "pre_install": [],
+    "python": "3.10",
+    "specification": "https://aiokafka.readthedocs.io/",
+    "version_source": "pyproject.toml[project.requires-python]",
+    "version_conflicts": [],
+    "system_deps_hint": []
+  },
+  "test": {
+    "test_cmd": "pytest",
+    "test_dir": "tests"
+  },
+  "_schema": "kaiju-breadcrumb/1"
+}

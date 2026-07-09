@@ -39,27 +39,15 @@ def create_future(loop: AbstractEventLoop | None = None) -> asyncio.Future[T]:
 
 
 async def wait_for(fut: Awaitable[T], timeout: None | int | float = None) -> T:
-    # A replacement for buggy (since 3.8.6) `asyncio.wait_for()`
-    # https://bugs.python.org/issue42130
     async with async_timeout.timeout(timeout):
         return await fut
 
 
-def parse_kafka_version(api_version: str) -> tuple[int, int, int]:
-    parsed = Version(api_version).release
-    if not 2 <= len(parsed) <= 3:
-        raise ValueError(api_version)
-    version = cast(tuple[int, int, int], (*parsed, 0)[:3])
-
-    if not (0, 9) <= version < (3, 0):
-        raise ValueError(api_version)
-    return version
 
 
 def commit_structure_validate(
     offsets: dict[TopicPartition, int | tuple[int, str] | OffsetAndMetadata],
 ) -> dict[TopicPartition, OffsetAndMetadata]:
-    # validate `offsets` structure
     if not offsets or not isinstance(offsets, dict):
         raise ValueError(offsets)
 
